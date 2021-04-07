@@ -1,0 +1,3 @@
+packages: flak-tg.cabal
+package flak-tg
+    optimization: False
