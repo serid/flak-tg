@@ -54,12 +54,13 @@ executable flak-tg
   other-modules:       Flak.Model, Flak.Argument, Flak.Util, Flak.Signals, Flak.Api, Flak.App Flak.AesonUtils, App, App.Persistence
 
   -- LANGUAGE extensions used by modules in this package.
-  -- other-extensions:
+  -- other-extensions: ScopedTypeVariables
 
   -- Other library packages from which modules are imported.
   build-depends:    base >=4.12 && <4.13,
                     -- stdlib
                     containers,
+                    transformers,
 
                     -- http
                     http-client,

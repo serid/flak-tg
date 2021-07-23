@@ -1,7 +1,9 @@
 {
     "p'emojiBindings": {
-        ":FubuHappy:": "CAACAgIAAxkBAAIEv2D1qB-JmpVUEgxe6zVHMlv5gyaJAAIaDgAC3IfwSe2Xcvw4UxXJIAQ",
+        ":gcDestructors:": "CAACAgEAAx0CVidJqgABElUGYPrdUi5TkmsrlJZ02UMLzuWBpREAAkAAA67EmAGZcr3Xy_AYLiAE",
+        ":coq:": "CAACAgIAAx0CVidJqgABElZAYPsBzLWnv8vkhuWoIDrLfzvZAAH-AALECwACRxiISKiATNFDTLKIIAQ",
+        ":fubuHappy:": "CAACAgIAAxkBAAIEv2D1qB-JmpVUEgxe6zVHMlv5gyaJAAIaDgAC3IfwSe2Xcvw4UxXJIAQ",
         ":doge:": "CAACAgEAAxkBAAIEtWD1RZu0AzIVhcMb7nieVwwmhMklAAJWAwACSrgkEaOWZgHc_KxMIAQ",
-        ":MerunyaHonk:": "CAACAgIAAx0CVidJqgABEkQiYPVL7ayMGx-68wN8DWTQk6uL35IAAhgAA383TCuru4Fln_ZkAAEgBA"
+        ":merunyaHonk:": "CAACAgIAAx0CVidJqgABEkQiYPVL7ayMGx-68wN8DWTQk6uL35IAAhgAA383TCuru4Fln_ZkAAEgBA"
     }
 }

@@ -1,34 +1,40 @@
+{-# LANGUAGE ScopedTypeVariables #-}
+
 module Flak.App where
 
-import qualified Flak.Api as Api
-import qualified Flak.Model as Model
-import qualified Flak.Argument as Argument
+--import Control.Monad.State.Lazy
+import Control.Monad
+import Control.Monad.Trans.State
+import Control.Concurrent ( threadDelay )
 
 import qualified Data.Aeson.Encode.Pretty as P
 import qualified Data.ByteString.Lazy.Char8 as B
 
-import Control.Concurrent ( threadDelay )
-
+import qualified Flak.Api as Api
+import qualified Flak.Model as Model
+import qualified Flak.Argument as Argument
 import Flak.Util (iterateM'', ControlFlow (Continue, Break))
 
-type StatefulHandler s = (s, Model.Update) -> (s, [Api.ApiAction])
+{-
+type StatefulHandler s = Model.Update -> State s [Api.ApiAction]
 type StatelessHandler = Model.Update -> [Api.ApiAction]
 
 makeStateful :: StatelessHandler -> StatefulHandler s
-makeStateful h = \(state, upd) -> (state, h upd)
+makeStateful h = \upd -> state $ \s -> (h upd, s)
+-}
 
 newtype UpdateHandler s = UpdateHandler {
-    runHandler :: (s, Model.Update) -> (s, [Api.ApiAction])
+    runHandler :: Model.Update -> State s [Api.ApiAction]
 }
 
 instance Semigroup (UpdateHandler s) where
-    h1 <> h2 = UpdateHandler $ \(state, upd) ->
-        let (state1, actions1) = runHandler h1 (state, upd) in
-        let (state2, actions2) = runHandler h2 (state1, upd) in
-        (state2, actions1 ++ actions2)
+    h1 <> h2 = UpdateHandler $ \upd -> do
+        actions1 <- runHandler h1 upd
+        actions2 <- runHandler h2 upd
+        pure $ actions1 ++ actions2
 
 instance Monoid (UpdateHandler s) where
-    mempty = UpdateHandler $ \(state, upd) -> (state, [])
+    mempty = UpdateHandler $ \upd -> pure []
 
 data App s = App
     { app'api :: Api.Api
@@ -51,7 +57,7 @@ iterator app state = do
     putStrLn $ B.unpack $ P.encodePretty $ upds
 
     -- Compute new application state and actions
-    let (newState, actions) = concatFoldUpdates (app'handler app) state (Model.result upds)
+    let (actions, newState) = runState (concatFoldUpdates (app'handler app) (Model.result upds)) state
 
     -- Perform actions
     sequence $ map (Api.requestAction (app'api app)) $ actions
@@ -72,10 +78,10 @@ iterator app state = do
 loop :: App s -> s -> IO s
 loop app start = iterateM'' (iterator app) start
 
-concatFoldUpdates :: UpdateHandler s -> s -> [Model.Update] -> (s, [Api.ApiAction])
-concatFoldUpdates f start xs = foldl fun (start, []) xs
+concatFoldUpdates :: forall s. UpdateHandler s -> [Model.Update] -> State s [Api.ApiAction]
+concatFoldUpdates f upds = foldM folder [] upds
     where
-        --fun :: (s, [Api.ApiAction]) -> Model.Update -> (s, [Api.ApiAction])
-        fun (state, actions) upd =
-            let (newState, moreActions) = runHandler f (state, upd) in
-            (newState, actions ++ moreActions)
+        folder :: [Api.ApiAction] -> Model.Update -> State s [Api.ApiAction]
+        folder accumulator upd = do
+            actions <- runHandler f upd
+            pure $ accumulator ++ actions
