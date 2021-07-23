@@ -54,6 +54,7 @@ executable flak-tg
   other-modules:    Flak.Model,
                     Flak.Argument,
                     Flak.Util,
+                    Flak.Util.Result,
                     Flak.Signals,
                     Flak.Api,
                     Flak.App,
