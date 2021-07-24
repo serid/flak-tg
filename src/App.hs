@@ -20,13 +20,15 @@ import qualified Data.Text as T
 import qualified Data.Map as Map
 
 import qualified Data.List.Extra as E
+import qualified Safe
 
 import qualified Flak.Api as Api
 import qualified Flak.App as App
 import qualified Flak.Model as Model
 import qualified Flak.Argument as Argument
 
-import Flak.Util (trimEnd, fromRight)
+import Flak.Util
+import Flak.Util.Result
 import Flak.Signals
 
 import qualified App.Persistence as Persistence
@@ -42,9 +44,6 @@ type Handler = App.UpdateHandler AppState
 
 mapMode :: (Mode -> Mode) -> AppState -> AppState
 mapMode f state = state { as'mode = (f $ as'mode state) }
-
-voidIO :: (b -> IO a) -> (b -> IO ())
-voidIO k = void . k
 
 hoistMaybe :: Monad m => Maybe a -> MaybeT m a
 hoistMaybe = MaybeT . pure
@@ -136,29 +135,57 @@ handleEmoji = App.UpdateHandler $ \update ->
 
 handleCommand :: Handler
 handleCommand  = App.UpdateHandler $ \update ->
-    fmap (fromMaybe []) $ runMaybeT (act update)
+    App.unwrapErrMutator $ act update
     where
-    act :: Model.Update -> MaybeT (State AppState) [Api.ApiAction]
+    act :: Model.Update -> App.ErrMutator AppState
     act update = do
-        message <- hoistMaybe $ Model.message update
-        text <- hoistMaybe $ Model.text message
+        message <- hoistResult $ resultOk App.SilentErr $ Model.message update
+        text <- hoistResult $ resultOk App.SilentErr $ Model.text message
         let chatid = Model.chat'id $ Model.chat $ message
         let messageid = Model.message_id message
 
-        (newMode, str) <- hoistMaybe $ commandMapping text
-        lift $ modify (mapMode $ const newMode)
-        pure [voidIO $ Api.requestSendMessage $ Argument.sendMessageWithReply chatid str messageid]
+        let maybeCommand = commandMapping text
+        case maybeCommand of
+            Nothing -> pure []
+            Just command -> command update
 
-commandMap :: Map.Map String (String -> (Mode, Text))
+commandMap :: Map.Map String (String -> App.ErrHandler AppState)
 commandMap = Map.fromList
-    [ ("/stickerinfo", \_ -> (WaitingStickerInfo, "Good, now send the sticker"))
-    , ("/addemoji", \s -> (WaitingAddEmoji s, "Good, now send the sticker"))
+    [ ("/stickerinfo", \_ update -> do
+        lift $ modify (mapMode $ const WaitingStickerInfo)
+        message <- hoistResult $ resultOk App.SilentErr $ Model.message update
+        let chatid = Model.chat'id $ Model.chat $ message
+        let str = "Good, now send the sticker"
+        pure [voidIO $ Api.requestSendMessage $ Argument.defaultSendMessage chatid str]
+        )
+    , ("/addemoji", \arg update -> do
+        lift $ modify (mapMode $ const (WaitingAddEmoji arg))
+        message <- hoistResult $ resultOk App.SilentErr $ Model.message update
+        let chatid = Model.chat'id $ Model.chat $ message
+        let str = "Good, now send the sticker"
+
+        if null arg
+        then hoistResult $ Err (App.CommandErr chatid "empty emoji")
+        else pure [voidIO $ Api.requestSendMessage $ Argument.defaultSendMessage chatid str]
+        )
+    , ("/cancel", \_ update -> do
+        mode <- lift $ gets as'mode
+
+        message <- hoistResult $ resultOk App.SilentErr $ Model.message update
+        let chatid = Model.chat'id $ Model.chat $ message
+        let str = case mode of
+                    Start -> "I wasn't doing anything anyways"
+                    _ -> "Command cancelled"
+        lift $ modify (mapMode $ const Start)
+
+        pure [voidIO $ Api.requestSendMessage $ Argument.defaultSendMessage chatid str]
+        )
     ]
 
-commandMapping :: Text -> Maybe (Mode, Text)
+commandMapping :: Text -> Maybe (App.ErrHandler AppState)
 commandMapping text =
     let (command, argument) = span (/= ' ') (T.unpack text) in
-    let (command', argument') = (trimEnd '@' command, tail argument) in
+    let (command', argument') = (trimEnd '@' command, Safe.tailSafe argument) in
     do
         f <- Map.lookup command' commandMap
         pure $ f argument'
@@ -166,9 +193,7 @@ commandMapping text =
 mapText :: (String -> String) -> Text -> Text
 mapText f = T.pack . f . T.unpack
 
-handleText :: Handler
-handleText = handleRust <> handleEmoji  <> handleCommand
-
+{-
 -- Choose handler based on AppState
 handler :: Handler
 handler = App.UpdateHandler $ \update -> do
@@ -177,6 +202,18 @@ handler = App.UpdateHandler $ \update -> do
         Start -> App.runHandler handleText update
         WaitingStickerInfo -> App.runHandler handleStickerInfo update
         WaitingAddEmoji _ -> App.runHandler handleAddEmoji update
+-}
+
+stateSpecificHandler :: Handler
+stateSpecificHandler = App.UpdateHandler $ \update -> do
+    mode <- gets as'mode
+    case mode of
+        WaitingStickerInfo -> App.runHandler handleStickerInfo update
+        WaitingAddEmoji _ -> App.runHandler handleAddEmoji update
+        _ -> pure []
+
+handler :: Handler
+handler = handleRust <> handleEmoji  <> handleCommand <> stateSpecificHandler
 
 example2 :: IO ()
 example2 = do

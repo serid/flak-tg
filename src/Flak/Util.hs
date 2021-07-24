@@ -2,7 +2,7 @@ module Flak.Util where
 
 import Control.Monad
 
-import Data.Maybe
+import qualified Data.Maybe as M
 import Data.List (dropWhileEnd)
 import qualified Data.Aeson as A
 import qualified Data.ByteString.Lazy.Char8 as B
@@ -14,6 +14,9 @@ f <| x = f x
 
 (|>) :: a -> (a -> b) -> b
 x |> f = f x
+
+voidIO :: (a -> IO b) -> (a -> IO ())
+voidIO k = void . k
 
 fromRight :: Either String b -> b
 fromRight (Right x) = x
@@ -39,12 +42,12 @@ iterateM'' k state = do
         Continue state' -> iterateM'' k state'
         Break r -> pure r
 
+data ControlFlow a b = Continue a | Break b
+
 -- Trim string from left until needle (drops needle too)
 trimStart :: Eq a => a -> [a] -> [a]
-trimStart needle str = fromMaybe str $ S.tailMay $ dropWhile (/= needle) str
+trimStart needle str = M.fromMaybe str $ S.tailMay $ dropWhile (/= needle) str
 
 -- Trim string from right until needle (drops needle too)
 trimEnd :: Eq a => a -> [a] -> [a]
-trimEnd needle str = fromMaybe str $ S.initMay $ dropWhileEnd (/= needle) str
-
-data ControlFlow a b = Continue a | Break b
+trimEnd needle str = M.fromMaybe str $ S.initMay $ dropWhileEnd (/= needle) str

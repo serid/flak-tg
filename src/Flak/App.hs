@@ -7,13 +7,16 @@ import Control.Monad
 import Control.Monad.Trans.State
 import Control.Concurrent ( threadDelay )
 
+import Data.Text (Text)
+
 import qualified Data.Aeson.Encode.Pretty as P
 import qualified Data.ByteString.Lazy.Char8 as B
 
 import qualified Flak.Api as Api
 import qualified Flak.Model as Model
 import qualified Flak.Argument as Argument
-import Flak.Util (iterateM'', ControlFlow (Continue, Break))
+import Flak.Util
+import Flak.Util.Result
 
 {-
 type StatefulHandler s = Model.Update -> State s [Api.ApiAction]
@@ -23,8 +26,11 @@ makeStateful :: StatelessHandler -> StatefulHandler s
 makeStateful h = \upd -> state $ \s -> (h upd, s)
 -}
 
+type Mutator s = State s [Api.ApiAction]
+type Handler s = Model.Update -> Mutator s
+
 newtype UpdateHandler s = UpdateHandler {
-    runHandler :: Model.Update -> State s [Api.ApiAction]
+    runHandler :: Handler s
 }
 
 instance Semigroup (UpdateHandler s) where
@@ -35,6 +41,32 @@ instance Semigroup (UpdateHandler s) where
 
 instance Monoid (UpdateHandler s) where
     mempty = UpdateHandler $ \upd -> pure []
+
+type ErrMutator s = ResultT CommandErr (State s) [Api.ApiAction]
+type ErrHandler s = Model.Update -> ErrMutator s
+
+data CommandErr =
+    SilentErr
+    | CommandErr Int Text {-ChatId-}
+
+unwrapErrMutator :: ErrMutator s -> Mutator s
+unwrapErrMutator h = do
+    saveState <- get
+    r <- runResultT $ h
+    case r of
+        Ok actions -> pure actions
+        Err commandErr -> do
+            -- Restore state to what it was before error occured
+            put saveState
+            pure $ sendCommandErr commandErr
+
+unwrapErrHandler :: ErrHandler s -> UpdateHandler s
+unwrapErrHandler h = UpdateHandler $ \upd -> unwrapErrMutator $ h upd
+
+sendCommandErr :: CommandErr -> [Api.ApiAction]
+sendCommandErr (SilentErr) = []
+sendCommandErr (CommandErr chatid text) = 
+    [voidIO $ Api.requestSendMessage $ Argument.defaultSendMessage chatid text]
 
 data App s = App
     { app'api :: Api.Api

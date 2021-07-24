@@ -10,7 +10,6 @@ import GHC.Generics
 import Data.Text (Text)
 import qualified Data.Aeson as A
 
--- TODO: move Flak.Model.trim' to a separate file
 import Flak.AesonUtils
 
 -- Argument for /getUpdates
